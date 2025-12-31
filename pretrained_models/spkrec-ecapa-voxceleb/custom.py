@@ -1,0 +1,1 @@
+C:/Users/prash/OneDrive/Desktop/face_n_voice_sys_csp_v2.2/pretrained_models/spkrec-ecapa-voxceleb/custom.py
