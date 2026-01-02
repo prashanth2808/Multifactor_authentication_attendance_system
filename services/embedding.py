@@ -52,3 +52,4 @@ def get_face_embedding(face_img: np.ndarray) -> np.ndarray | None:
     except Exception as e:
         console.print(f"[red]Failed to generate ArcFace embedding: {e}[/red]")
         return None
+

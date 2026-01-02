@@ -1,4 +1,6 @@
 flask
+flask-cors
+gunicorn
 opencv-python
 numpy
 pymongo
@@ -10,12 +12,10 @@ pydantic-settings
 insightface
 onnxruntime
 requests
+speechbrain
 Resemblyzer
 torch
 torchaudio
-sounddevice
-pydub
-soundfile
 pytz
 scikit-learn
-streamlit
+# streamlit (not used in v2.2 web mode)

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     # Recognition
     similarity_threshold: float = Field(0.62, env="SIMILARITY_THRESHOLD")
     min_photos: int = Field(3, env="MIN_PHOTOS")
+
+    # Voice verification
+    # Typical ECAPA cosine thresholds are environment-dependent. Keep configurable.
+    voice_threshold: float = Field(0.68, env="VOICE_THRESHOLD")
     
     # Liveness
     liveness_required: bool = Field(False, env="LIVENESS_REQUIRED")

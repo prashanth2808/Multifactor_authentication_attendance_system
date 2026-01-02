@@ -30,12 +30,13 @@ def mark_session(user_id: str, name: str, email: str) -> Tuple[str, str]:
     Possible actions: LOGIN, LOGOUT, MALPRACTICE, ABSENT_AUTO, ERROR
     """
     collection = get_sessions_collection()
-    if not collection:
+    if collection is None:
         return "ERROR", "Database not available"
 
-    today = datetime.utcnow().date()
+    # Use system local time (not UTC) so displayed timings match the machine clock
+    today = datetime.now().date()
     today_str = today.isoformat()
-    now = datetime.utcnow()
+    now = datetime.now()
 
     # Find today's session record
     session = collection.find_one({
@@ -102,10 +103,10 @@ def mark_session(user_id: str, name: str, email: str) -> Tuple[str, str]:
 def get_today_status(user_id: str) -> Dict[str, Any]:
     """Helper for reports — returns final status"""
     collection = get_sessions_collection()
-    if not collection:
+    if collection is None:
         return {"status": "absent"}
 
-    today_str = datetime.utcnow().date().isoformat()
+    today_str = datetime.now().date().isoformat()
     session = collection.find_one({"user_id": user_id, "date": today_str})
 
     if not session:
@@ -116,7 +117,7 @@ def get_today_status(user_id: str) -> Dict[str, Any]:
             return {"status": "absent", "reason": "Forgot logout (9+ hours)"}
         return {"status": "present", "reason": "Proper session"}
 
-    hours = (datetime.utcnow() - session["login_time"]).total_seconds() / 3600
+    hours = (datetime.now() - session["login_time"]).total_seconds() / 3600
     if hours >= 9:
         # Trigger auto-absent
         dummy_name = session.get("name", "User")
@@ -129,7 +130,7 @@ def get_today_status(user_id: str) -> Dict[str, Any]:
 def get_report(date_str: str) -> List[Dict]:
     """Enhanced report with correct Present/Absent"""
     collection = get_sessions_collection()
-    if not collection:
+    if collection is None:
         return []
 
     sessions = list(collection.find({"date": date_str}).sort("login_time", 1))
@@ -146,7 +147,7 @@ def get_report(date_str: str) -> List[Dict]:
             else:
                 status = "[bold green]Present[/bold green]"
         else:
-            hours = (datetime.utcnow() - s["login_time"]).total_seconds() / 3600
+            hours = (datetime.now() - s["login_time"]).total_seconds() / 3600
             if hours >= 9:
                 status = "[bold red]Absent[/bold red] (Auto)"
             else:

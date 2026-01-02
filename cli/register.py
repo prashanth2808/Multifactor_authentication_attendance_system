@@ -92,7 +92,12 @@ def register(
         voice_filename = f"{safe_name}_{timestamp}_voice.wav" if safe_name else f"{email_hash}_{timestamp}_voice.wav"
         voice_path = os.path.join(VOICE_DIR, voice_filename)
 
-        import soundfile as sf
+        try:
+            import soundfile as sf  # local-only dependency
+        except Exception as e:
+            console.print(f"[bold red]Missing dependency 'soundfile'. Install local extras: pip install -r requirements_local.txt ({e})[/bold red]")
+            raise
+
         sf.write(voice_path, best_audio_clip, samplerate=16000)
         console.print(f"[bold green]Voice recording saved: {voice_path}[/bold green]")
         

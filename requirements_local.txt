@@ -1,0 +1,5 @@
+# Local/kiosk extras (device capture + audio file writing)
+# Install with: pip install -r requirements.txt -r requirements_local.txt
+sounddevice
+soundfile
+pydub

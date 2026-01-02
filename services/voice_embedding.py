@@ -4,18 +4,27 @@
 import warnings
 warnings.filterwarnings("ignore")
 
-# === WINDOWS PATCH — MUST BE AT TOP ===
-import torchaudio
-if not hasattr(torchaudio, 'set_audio_backend'):
-    def dummy_backend(backend):
-        pass
-    torchaudio.set_audio_backend = dummy_backend
-# === END PATCH ===
+# === Optional torchaudio patch ===
+# Some environments (notably certain Windows builds) expose a torchaudio variant
+# missing set_audio_backend; keep the old behavior but do not fail import on Linux/cloud.
+try:
+    import torchaudio  # type: ignore
+    if not hasattr(torchaudio, "set_audio_backend"):
+        def dummy_backend(backend):
+            pass
+        torchaudio.set_audio_backend = dummy_backend  # type: ignore
+except Exception:  # pragma: no cover
+    torchaudio = None  # type: ignore
 
 import os
 import numpy as np
 import torch
-import sounddevice as sd
+# sounddevice is only needed for local CLI recording.
+# In cloud deployment, audio is uploaded from the browser.
+try:
+    import sounddevice as sd  # type: ignore
+except Exception:  # pragma: no cover
+    sd = None  # type: ignore
 import logging
 from rich.console import Console
 import time
@@ -82,8 +91,14 @@ def _load_vad_model():
     return _vad_model
 
 def record_audio(duration=5.0, fs=16000):
-    """Record audio from microphone"""
-    audio = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype='float32')
+    """Record audio from microphone (local CLI use only).
+
+    In cloud/web deployments this must NOT be used. The browser records audio and uploads it.
+    """
+    if sd is None:
+        raise RuntimeError("sounddevice is not available. Use browser upload + embed from waveform instead.")
+
+    audio = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype="float32")
     sd.wait()
     return audio.flatten()
 
@@ -279,7 +294,7 @@ def record_and_embed_three_times(duration_per_clip=7.0, user_id=None):
 
 def verify_voice_live(stored_emb, duration=5.0, threshold=0.72):
     """Verify voice using ECAPA-TDNN"""
-    console.print("\\n[bold blue]🎤 Voice Verification — ECAPA-TDNN[/bold blue]")
+    console.print("[bold blue]🎤 Voice Verification — ECAPA-TDNN[/bold blue]")
     console.print("[cyan]Speak the same phrase clearly...[/cyan]")
     
     # Record live audio
@@ -315,38 +330,117 @@ def verify_voice_live(stored_emb, duration=5.0, threshold=0.72):
     
     return score, passed
 
-def verify_voice_live_flask(stored_emb, duration=5.0, threshold=0.72):
-    """Flask version without Rich console output"""
-    raw_audio = record_audio(duration)
-    cleaned = apply_vad(raw_audio)
-    
-    if len(cleaned) == 0:
-        return 0.0, False
-    if len(cleaned) < 8000:
-        return 0.0, False
-    
-    live_emb = get_ecapa_embedding(cleaned)
-    if live_emb is None:
-        return 0.0, False
-    
-    # Ensure both embeddings are 1D arrays
-    stored_emb_flat = np.array(stored_emb).flatten()
-    live_emb_flat = live_emb.flatten()
-    
-    score = np.dot(stored_emb_flat, live_emb_flat) / (
-        np.linalg.norm(stored_emb_flat) * np.linalg.norm(live_emb_flat) + 1e-8
-    )
-    
-    return score, score >= threshold
-
 # Aliases for backward compatibility
 get_voice_embedding = get_ecapa_embedding
 
-# Auto-initialize on import
-try:
-    console.print("[cyan]Initializing ECAPA-TDNN voice system...[/cyan]")
-    _load_ecapa_model()
-    console.print("[bold green]🎉 Voice system ready with ECAPA-TDNN![/bold green]")
-except Exception as e:
-    console.print(f"[bold red]❌ Voice system initialization failed: {e}[/bold red]")
-    console.print("[yellow]Run download_ecapa_manual.py first![/yellow]")
+
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """Cosine similarity helper for voice embeddings."""
+    a = np.asarray(a, dtype=np.float32).flatten()
+    b = np.asarray(b, dtype=np.float32).flatten()
+    a_norm = np.linalg.norm(a)
+    b_norm = np.linalg.norm(b)
+    if a_norm == 0.0 or b_norm == 0.0:
+        return 0.0
+    return float(np.dot(a, b) / (a_norm * b_norm))
+
+def _resample_linear(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
+    """Simple linear resampler to avoid extra deps in hosted mode."""
+    if orig_sr == target_sr:
+        return audio
+    ratio = orig_sr / target_sr
+    new_len = int(len(audio) / ratio)
+    if new_len <= 1:
+        return audio
+    x = np.arange(len(audio), dtype=np.float32)
+    xp = np.linspace(0, len(audio) - 1, num=new_len, dtype=np.float32)
+    return np.interp(xp, x, audio).astype(np.float32)
+
+
+def get_voice_embedding_from_audio_bytes(audio_bytes: bytes, expected_sr: int = 16000) -> np.ndarray | None:
+    """Cloud-safe helper: decode uploaded WAV bytes and extract an ECAPA embedding.
+
+    Mirrors CLI behavior:
+    - normalize loudness BEFORE VAD (helps VAD on quiet mics)
+    - require minimum speech length after VAD
+    """
+    try:
+        from services.io_helpers import decode_wav_bytes_to_float32
+
+        decoded = decode_wav_bytes_to_float32(audio_bytes)
+        if decoded is None:
+            return None
+        audio, sr = decoded
+        if sr != expected_sr:
+            audio = _resample_linear(audio, sr, expected_sr)
+            sr = expected_sr
+
+        # Pre-VAD loudness normalization helps Silero VAD detect speech on quiet inputs
+        audio = normalize_loudness(np.asarray(audio, dtype=np.float32))
+
+        cleaned = apply_vad(audio, fs=sr)
+        if len(cleaned) == 0:
+            return None
+        # CLI checks for minimum speech; keep the same idea here
+        if len(cleaned) < 8000:  # < 0.5s at 16kHz
+            return None
+
+        return get_ecapa_embedding(cleaned)
+    except Exception as e:
+        console.print(f"[red]Failed to embed from audio bytes: {e}[/red]")
+        return None
+
+
+def verify_voice_from_audio_bytes(stored_emb, audio_bytes: bytes, threshold: float = 0.72) -> tuple[float, bool]:
+    """Cloud-safe voice verification from uploaded audio bytes."""
+    score, passed, _ = verify_voice_from_audio_bytes_detailed(stored_emb, audio_bytes, threshold=threshold)
+    return score, passed
+
+
+def verify_voice_from_audio_bytes_detailed(
+    stored_emb,
+    audio_bytes: bytes,
+    threshold: float = 0.72,
+) -> tuple[float, bool, str]:
+    """Like CLI: return a reason code for failures.
+
+    reason:
+      - ok
+      - no_speech
+      - embedding_failed
+      - below_threshold
+    """
+    # Debug: basic bytes size
+    try:
+        console.print(f"[dim]Web voice bytes: {len(audio_bytes)} bytes | threshold={threshold:.3f}[/dim]")
+    except Exception:
+        pass
+
+    live_emb = get_voice_embedding_from_audio_bytes(audio_bytes)
+    if live_emb is None:
+        try:
+            console.print("[yellow]Web voice: embedding not generated (no_speech / decode issue)[/yellow]")
+        except Exception:
+            pass
+        return 0.0, False, "no_speech"
+
+    stored_emb_flat = np.array(stored_emb, dtype=np.float32).flatten()
+    live_emb_flat = np.array(live_emb, dtype=np.float32).flatten()
+    score = float(np.dot(stored_emb_flat, live_emb_flat) / (
+        np.linalg.norm(stored_emb_flat) * np.linalg.norm(live_emb_flat) + 1e-8
+    ))
+    passed = bool(score >= threshold)
+
+    # Print same style as CLI for easy comparison
+    try:
+        status = "✅ PASS" if passed else "❌ FAIL"
+        console.print(f"[bold]ECAPA-TDNN Score (web): {score:.1%} → {status}[/bold]")
+    except Exception:
+        pass
+
+    return score, passed, ("ok" if passed else "below_threshold")
+
+
+# NOTE: Do not auto-initialize models on import.
+# In API/server contexts this module is imported during startup; eager loading can slow boot.
+# Models will be loaded lazily on first use via _load_ecapa_model() / _load_vad_model().
