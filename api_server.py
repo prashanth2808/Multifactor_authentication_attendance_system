@@ -29,6 +29,28 @@ from services.voice_embedding import verify_voice_from_audio_bytes_detailed
 
 
 
+from werkzeug.exceptions import HTTPException
+import traceback
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # Let HTTP errors (404, 400, etc.) pass through normally
+    if isinstance(e, HTTPException):
+        return e
+
+    # Log real server-side bugs
+    print(traceback.format_exc())
+
+    return {"error": "Internal Server Error"}, 500
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return "", 204
+
+
+
+
 
 def _json_safe(obj: Any):
     """Convert numpy/scalar objects into JSON-safe types."""
