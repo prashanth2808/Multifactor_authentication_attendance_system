@@ -18,4 +18,6 @@ torch
 torchaudio
 pytz
 scikit-learn
+supabase
+supabase-py
 # streamlit (not used in v2.2 web mode)
