@@ -1,11 +1,7 @@
 """api_server.py
 Cloud backend for Face+Voice verification.
 
-IMPORTANT:
-- This server must NEVER access webcam/microphone hardware.
-- The browser captures image/audio and uploads them.
-
-Render start command (recommended):
+Render start command:
   gunicorn api_server:app
 """
 
@@ -35,26 +31,20 @@ from services.voice_embedding import (
 import traceback
 
 
-# === PRE-LOAD LIGHTWEIGHT INSIGHTFACE MODEL AT STARTUP ===
-# buffalo_s is the smallest stable pack (~150MB) — fits in Render free tier 512MB RAM
-print("Pre-loading lightweight InsightFace model (buffalo_s)...")
+# === PRE-LOAD STABLE LIGHTWEIGHT MODEL ===
+print("Pre-loading stable lightweight InsightFace model (buffalo_sc)...")
 
 from insightface.app import FaceAnalysis
 
-_insightface_app = FaceAnalysis(
-    name='buffalo_s',
-    providers=['CPUExecutionProvider']
-)
-_insightface_app.prepare(ctx_id=0)  # Important: initializes detection + recognition
+_insightface_app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
+_insightface_app.prepare(ctx_id=0)
 
-print("buffalo_s model loaded and ready")
+print("buffalo_sc model loaded — app ready")
 
 
 def _json_safe(obj: Any):
-    """Convert numpy/scalar objects into JSON-safe types."""
     try:
         import numpy as np
-
         if isinstance(obj, (np.floating,)):
             return float(obj)
         if isinstance(obj, (np.integer,)):
@@ -63,7 +53,6 @@ def _json_safe(obj: Any):
             return obj.tolist()
     except Exception:
         pass
-
     if isinstance(obj, dict):
         return {k: _json_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -75,7 +64,6 @@ def create_app() -> Flask:
     app = Flask(__name__)
     CORS(app)
 
-    # === GLOBAL ERROR HANDLER ===
     @app.errorhandler(Exception)
     def handle_exception(e):
         if isinstance(e, HTTPException):
@@ -83,12 +71,10 @@ def create_app() -> Flask:
         print(traceback.format_exc())
         return {"error": "Internal Server Error"}, 500
 
-    # === FAVICON ===
     @app.route("/favicon.ico")
     def favicon():
         return "", 204
 
-    # === HEALTH CHECK ===
     @app.get("/api/health")
     def health():
         try:
@@ -97,7 +83,6 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"ok": True, "db": False, "error": str(e)}), 200
 
-    # === REGISTRATION ===
     @app.post("/api/register")
     def register():
         name = (request.form.get("name") or "").strip()
@@ -105,22 +90,12 @@ def create_app() -> Flask:
         face_file = request.files.get("face")
         voice_file = request.files.get("voice")
 
-        if not name or not email:
-            return jsonify({"ok": False, "error": "name and email are required"}), 400
-        if not face_file or not voice_file:
-            return jsonify({"ok": False, "error": "face and voice are required"}), 400
+        if not name or not email or not face_file or not voice_file:
+            return jsonify({"ok": False, "error": "missing required fields"}), 400
 
         existing = find_user_by_email(email)
         if existing:
-            return jsonify({
-                "ok": False,
-                "error": "user already exists",
-                "user": {
-                    "id": existing.get("id"),
-                    "email": existing.get("email"),
-                    "name": existing.get("name")
-                }
-            }), 409
+            return jsonify({"ok": False, "error": "user already exists"}), 409
 
         img = decode_image_bytes(face_file.read())
         if img is None:
@@ -153,22 +128,14 @@ def create_app() -> Flask:
         if not inserted:
             return jsonify({"ok": False, "error": "failed_to_save_user"}), 500
 
-        return jsonify({
-            "ok": True,
-            "user": {
-                "id": inserted.get("id"),
-                "name": inserted.get("name"),
-                "email": inserted.get("email")
-            }
-        })
+        return jsonify({"ok": True, "user": {"id": inserted.get("id"), "name": name, "email": email}})
 
-    # === SESSION (AUTO) ===
     @app.post("/api/session/auto")
     def session_auto():
         face_file = request.files.get("face")
         voice_file = request.files.get("voice")
         if not face_file or not voice_file:
-            return jsonify({"ok": False, "error": "face and voice are required"}), 400
+            return jsonify({"ok": False, "error": "face and voice required"}), 400
 
         img = decode_image_bytes(face_file.read())
         if img is None:
@@ -217,7 +184,6 @@ def create_app() -> Flask:
 
         return jsonify(response)
 
-    # === STATIC UI ===
     WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
 
     @app.get("/")
@@ -228,11 +194,7 @@ def create_app() -> Flask:
     def register_page():
         register_path = os.path.join(WEB_DIR, "register.html")
         if not os.path.exists(register_path):
-            return (
-                f"register.html not found at: {register_path}. "
-                f"Check you restarted the server and are running the correct project folder.",
-                404,
-            )
+            return "register.html not found", 404
         return send_from_directory(WEB_DIR, "register.html")
 
     @app.get("/web/<path:filename>")
@@ -246,7 +208,6 @@ def create_app() -> Flask:
     return app
 
 
-# Create app instance
 app = create_app()
 
 
