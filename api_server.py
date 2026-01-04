@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from datetime import datetime
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
@@ -24,7 +25,7 @@ from db.session_repo import mark_session
 from db.user_repo import save_user, find_user_by_email
 from services.embedding import get_face_embedding
 from services.comparison import verify_match
-from services.face_detection import get_cropped_face
+from services.face_detection import get_cropped_face, _get_retinaface_detector  # ← added
 from services.io_helpers import decode_image_bytes
 from services.voice_embedding import (
     verify_voice_from_audio_bytes_detailed,
@@ -32,6 +33,13 @@ from services.voice_embedding import (
 )
 
 import traceback
+
+
+# === PRE-LOAD INSIGHTFACE MODEL AT STARTUP ===
+# This prevents timeout on first request when model is downloaded
+print("Pre-loading InsightFace RetinaFace detector (buffalo_l)...")
+_get_retinaface_detector()  # Triggers download if missing
+print("InsightFace model loaded and ready")
 
 
 def _json_safe(obj: Any):
@@ -59,17 +67,15 @@ def create_app() -> Flask:
     app = Flask(__name__)
     CORS(app)
 
-    # === ERROR HANDLER (must be inside create_app) ===
+    # === GLOBAL ERROR HANDLER ===
     @app.errorhandler(Exception)
     def handle_exception(e):
-        # Let HTTP errors (404, 400, etc.) pass through normally
         if isinstance(e, HTTPException):
             return e
-        # Log real server-side bugs
         print(traceback.format_exc())
         return {"error": "Internal Server Error"}, 500
 
-    # === FAVICON (silent 204) ===
+    # === FAVICON ===
     @app.route("/favicon.ico")
     def favicon():
         return "", 204
@@ -77,7 +83,6 @@ def create_app() -> Flask:
     # === HEALTH CHECK ===
     @app.get("/api/health")
     def health():
-        """Health check."""
         try:
             resp = supabase.table("users").select("id").limit(1).execute()
             return jsonify({"ok": True, "db": True, "users_visible": bool(resp.data)})
@@ -102,7 +107,11 @@ def create_app() -> Flask:
             return jsonify({
                 "ok": False,
                 "error": "user already exists",
-                "user": {"id": existing.get("id"), "email": existing.get("email"), "name": existing.get("name")}
+                "user": {
+                    "id": existing.get("id"),
+                    "email": existing.get("email"),
+                    "name": existing.get("name")
+                }
             }), 409
 
         img = decode_image_bytes(face_file.read())
@@ -138,7 +147,11 @@ def create_app() -> Flask:
 
         return jsonify({
             "ok": True,
-            "user": {"id": inserted.get("id"), "name": inserted.get("name"), "email": inserted.get("email")}
+            "user": {
+                "id": inserted.get("id"),
+                "name": inserted.get("name"),
+                "email": inserted.get("email")
+            }
         })
 
     # === SESSION (AUTO) ===
@@ -164,7 +177,6 @@ def create_app() -> Flask:
         face_result = verify_match(face_emb)
         stored_voice = face_result.get("voice_embedding")
 
-        # Privacy: never send stored embedding
         if isinstance(face_result, dict):
             face_result.pop("voice_embedding", None)
 
@@ -226,7 +238,7 @@ def create_app() -> Flask:
     return app
 
 
-# Create the app instance
+# Create app instance
 app = create_app()
 
 
