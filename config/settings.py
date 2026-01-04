@@ -54,8 +54,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore"
+        case_sensitive=False,  # ← comma added here
+        extra="ignore"         # ← this line is now valid
     )
 
 
