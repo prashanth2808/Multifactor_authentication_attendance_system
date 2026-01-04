@@ -36,21 +36,18 @@ import traceback
 
 
 # === PRE-LOAD LIGHTWEIGHT INSIGHTFACE MODEL AT STARTUP ===
-# This prevents timeout/OOM on first request
-# We use 'antelopev2' — much smaller (~100MB) than buffalo_l (~280MB), fits in Render free tier 512MB RAM
-print("Pre-loading lightweight InsightFace model (antelopev2)...")
+# buffalo_s is the smallest stable pack (~150MB) — fits in Render free tier 512MB RAM
+print("Pre-loading lightweight InsightFace model (buffalo_s)...")
 
 from insightface.app import FaceAnalysis
 
-# Force lightweight model
 _insightface_app = FaceAnalysis(
-    name='antelopev2',  # ← Lightweight, accurate, fits in 512MB RAM
-    providers=['CPUExecutionProvider'],
-    root=os.path.expanduser('~/.insightface/models')  # Default cache dir
+    name='buffalo_s',
+    providers=['CPUExecutionProvider']
 )
-_insightface_app.prepare(ctx_id=0)  # CPU context
+_insightface_app.prepare(ctx_id=0)  # Important: initializes detection + recognition
 
-print("InsightFace antelopev2 model loaded and ready")
+print("buffalo_s model loaded and ready")
 
 
 def _json_safe(obj: Any):
