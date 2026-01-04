@@ -25,7 +25,7 @@ from db.session_repo import mark_session
 from db.user_repo import save_user, find_user_by_email
 from services.embedding import get_face_embedding
 from services.comparison import verify_match
-from services.face_detection import get_cropped_face, _get_retinaface_detector  # ← added
+from services.face_detection import get_cropped_face
 from services.io_helpers import decode_image_bytes
 from services.voice_embedding import (
     verify_voice_from_audio_bytes_detailed,
@@ -35,11 +35,22 @@ from services.voice_embedding import (
 import traceback
 
 
-# === PRE-LOAD INSIGHTFACE MODEL AT STARTUP ===
-# This prevents timeout on first request when model is downloaded
-print("Pre-loading InsightFace RetinaFace detector (buffalo_l)...")
-_get_retinaface_detector()  # Triggers download if missing
-print("InsightFace model loaded and ready")
+# === PRE-LOAD LIGHTWEIGHT INSIGHTFACE MODEL AT STARTUP ===
+# This prevents timeout/OOM on first request
+# We use 'antelopev2' — much smaller (~100MB) than buffalo_l (~280MB), fits in Render free tier 512MB RAM
+print("Pre-loading lightweight InsightFace model (antelopev2)...")
+
+from insightface.app import FaceAnalysis
+
+# Force lightweight model
+_insightface_app = FaceAnalysis(
+    name='antelopev2',  # ← Lightweight, accurate, fits in 512MB RAM
+    providers=['CPUExecutionProvider'],
+    root=os.path.expanduser('~/.insightface/models')  # Default cache dir
+)
+_insightface_app.prepare(ctx_id=0)  # CPU context
+
+print("InsightFace antelopev2 model loaded and ready")
 
 
 def _json_safe(obj: Any):
