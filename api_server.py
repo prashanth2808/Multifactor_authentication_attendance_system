@@ -1,5 +1,4 @@
 """api_server.py
-
 Cloud backend for Face+Voice verification.
 
 IMPORTANT:
@@ -16,8 +15,6 @@ import os
 from typing import Any
 
 from flask import Flask, jsonify, request, send_from_directory
-
-from datetime import datetime
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
@@ -29,31 +26,12 @@ from services.embedding import get_face_embedding
 from services.comparison import verify_match
 from services.face_detection import get_cropped_face
 from services.io_helpers import decode_image_bytes
-from services.voice_embedding import verify_voice_from_audio_bytes_detailed, get_voice_embedding_from_audio_bytes
+from services.voice_embedding import (
+    verify_voice_from_audio_bytes_detailed,
+    get_voice_embedding_from_audio_bytes,
+)
 
-
-
-from werkzeug.exceptions import HTTPException
 import traceback
-
-@app.errorhandler(Exception)
-def handle_exception(e):
-    # Let HTTP errors (404, 400, etc.) pass through normally
-    if isinstance(e, HTTPException):
-        return e
-
-    # Log real server-side bugs
-    print(traceback.format_exc())
-
-    return {"error": "Internal Server Error"}, 500
-
-
-@app.route("/favicon.ico")
-def favicon():
-    return "", 204
-
-
-
 
 
 def _json_safe(obj: Any):
@@ -81,40 +59,34 @@ def create_app() -> Flask:
     app = Flask(__name__)
     CORS(app)
 
-    # Ensure API endpoints return JSON even on errors
+    # === ERROR HANDLER (must be inside create_app) ===
     @app.errorhandler(Exception)
-    def _handle_exception(e):
-        # Let Flask/Werkzeug handle normal HTTP errors (404/405/etc.)
+    def handle_exception(e):
+        # Let HTTP errors (404, 400, etc.) pass through normally
         if isinstance(e, HTTPException):
             return e
+        # Log real server-side bugs
+        print(traceback.format_exc())
+        return {"error": "Internal Server Error"}, 500
 
-        path = getattr(request, "path", "")
-        if path.startswith("/api/"):
-            return jsonify({"ok": False, "error": str(e), "type": e.__class__.__name__}), 500
-        raise e
+    # === FAVICON (silent 204) ===
+    @app.route("/favicon.ico")
+    def favicon():
+        return "", 204
 
+    # === HEALTH CHECK ===
     @app.get("/api/health")
     def health():
-        """Health check.
-
-        Confirms the API is up and Supabase credentials can access the DB.
-        """
+        """Health check."""
         try:
             resp = supabase.table("users").select("id").limit(1).execute()
             return jsonify({"ok": True, "db": True, "users_visible": bool(resp.data)})
         except Exception as e:
             return jsonify({"ok": True, "db": False, "error": str(e)}), 200
 
+    # === REGISTRATION ===
     @app.post("/api/register")
     def register():
-        """Register a new user (web).
-
-        Expects multipart/form-data:
-          - name: text
-          - email: text
-          - face: image/jpeg or image/png
-          - voice: audio/wav (16-bit PCM recommended)
-        """
         name = (request.form.get("name") or "").strip()
         email = (request.form.get("email") or "").strip().lower()
         face_file = request.files.get("face")
@@ -127,7 +99,11 @@ def create_app() -> Flask:
 
         existing = find_user_by_email(email)
         if existing:
-            return jsonify({"ok": False, "error": "user already exists", "user": {"id": existing.get("id"), "email": existing.get("email"), "name": existing.get("name")}}), 409
+            return jsonify({
+                "ok": False,
+                "error": "user already exists",
+                "user": {"id": existing.get("id"), "email": existing.get("email"), "name": existing.get("name")}
+            }), 409
 
         img = decode_image_bytes(face_file.read())
         if img is None:
@@ -160,16 +136,14 @@ def create_app() -> Flask:
         if not inserted:
             return jsonify({"ok": False, "error": "failed_to_save_user"}), 500
 
-        return jsonify({"ok": True, "user": {"id": inserted.get("id"), "name": inserted.get("name"), "email": inserted.get("email")}})
+        return jsonify({
+            "ok": True,
+            "user": {"id": inserted.get("id"), "name": inserted.get("name"), "email": inserted.get("email")}
+        })
 
+    # === SESSION (AUTO) ===
     @app.post("/api/session/auto")
     def session_auto():
-        """Manual flow endpoint.
-
-        Expects multipart/form-data:
-          - face: image/jpeg or image/png
-          - voice: audio/wav (16-bit PCM recommended)
-        """
         face_file = request.files.get("face")
         voice_file = request.files.get("voice")
         if not face_file or not voice_file:
@@ -190,7 +164,7 @@ def create_app() -> Flask:
         face_result = verify_match(face_emb)
         stored_voice = face_result.get("voice_embedding")
 
-        # Privacy: never send stored embedding to browser
+        # Privacy: never send stored embedding
         if isinstance(face_result, dict):
             face_result.pop("voice_embedding", None)
 
@@ -223,7 +197,7 @@ def create_app() -> Flask:
 
         return jsonify(response)
 
-    # Minimal UI
+    # === STATIC UI ===
     WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
 
     @app.get("/")
@@ -232,8 +206,6 @@ def create_app() -> Flask:
 
     @app.get("/register")
     def register_page():
-        # `send_from_directory` returns 404 if the file is missing.
-        # Make the failure explicit to help debug wrong working copies.
         register_path = os.path.join(WEB_DIR, "register.html")
         if not os.path.exists(register_path):
             return (
@@ -242,12 +214,6 @@ def create_app() -> Flask:
                 404,
             )
         return send_from_directory(WEB_DIR, "register.html")
-
-    # Avoid noisy stack traces in dev: browsers request /favicon.ico automatically.
-    # We return 204 if no favicon is present.
-    @app.get("/favicon.ico")
-    def favicon():
-        return ("", 204)
 
     @app.get("/web/<path:filename>")
     def web_static(filename: str):
@@ -260,6 +226,7 @@ def create_app() -> Flask:
     return app
 
 
+# Create the app instance
 app = create_app()
 
 
