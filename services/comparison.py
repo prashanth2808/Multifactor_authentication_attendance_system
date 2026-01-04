@@ -32,7 +32,9 @@ def find_best_match(
     best_score = -1.0
 
     for user in users:
-        user_id = str(user["_id"])
+        user_id = str(user.get("id"))
+        if not user_id or user_id == "None":
+            continue
         name = user["name"]
         email = user["email"]
         

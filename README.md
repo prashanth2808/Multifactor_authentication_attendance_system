@@ -5,7 +5,7 @@ This project is a **biometric login/logout + attendance system** that verifies a
 - **Face recognition** (ArcFace embedding + cosine similarity)
 - **Voice verification** (SpeechBrain ECAPA-TDNN speaker embedding + cosine similarity)
 
-It is implemented as a **command-line application (CLI)** using **Typer** and stores data in **MongoDB**.
+It is implemented as a **command-line application (CLI)** using **Typer** and stores data in **Supabase Postgres** (PostgreSQL).
 
 ---
 
@@ -28,7 +28,7 @@ It is implemented as a **command-line application (CLI)** using **Typer** and st
 - `main.py` – CLI entry point
 - `cli/` – CLI commands (register/session/report/admin)
 - `services/` – Face/voice embedding + verification logic
-- `db/` – MongoDB repositories (users, sessions)
+- `db/` – Postgres repositories (users, sessions) via `psycopg`
 - `config/` – `.env` configuration loader
 - `captured_voices/` – 1 best voice WAV saved per registration
 - `voice_backups/` – 3 VAD-cleaned voice clips per user (WAV) saved for future re-training/re-embedding
@@ -42,7 +42,7 @@ It is implemented as a **command-line application (CLI)** using **Typer** and st
 - Python 3.10+ (recommended)
 - Webcam
 - Microphone
-- MongoDB (local or Atlas)
+- Supabase Postgres database (cloud)
 
 ### Python packages
 
@@ -70,20 +70,14 @@ pip install -r requirements.txt
 > Note: `torch/torchaudio` installs can vary by system.
 > If you face installation errors, install PyTorch from the official site and then run `pip install -r requirements.txt` again.
 
-### 3) Start MongoDB
-
-If using local MongoDB:
-
-- Make sure MongoDB service is running
-- Default URI used by this project: `mongodb://localhost:27017`
-
-### 4) Configure environment variables (`.env`)
+### 3) Configure environment variables (`.env`)
 
 Edit the file `.env` in the project root:
 
 ```env
-MONGODB_URI=mongodb://localhost:27017
-DB_NAME=face_attendance
+# Recommended (works on IPv4-only networks): Supabase Pooler (often port 6543)
+DATABASE_URL=postgresql://postgres.<project-ref>:<PASSWORD>@aws-<region>.pooler.supabase.com:6543/postgres?sslmode=require
+# Alternative (direct): postgresql://postgres:<PASSWORD>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require
 SIMILARITY_THRESHOLD=0.62
 MIN_PHOTOS=3
 LIVENESS_REQUIRED=false
@@ -119,10 +113,10 @@ python main.py register --name "Your Name" --email "you@example.com"
 What it does:
 
 1. Captures **3 face photos** via webcam
-2. Generates **3 face embeddings** and stores them in MongoDB (`users.face_embeddings`)
+2. Generates **3 face embeddings** and stores them in Postgres (`user_face_embeddings.embedding`)
 3. Records **3 voice clips**
 4. Runs VAD (Silero) to keep only speech
-5. Generates **3 voice embeddings** (ECAPA) and stores the **average embedding** in MongoDB (`users.voice_embedding`)
+5. Generates **3 voice embeddings** (ECAPA) and stores the **average embedding** in Postgres (`users.voice_embedding`)
 6. Saves audio files:
    - One best clip to `captured_voices/<name>_<timestamp>_voice.wav`
    - All 3 cleaned clips to `voice_backups/user_<readable_id>/...`
@@ -213,9 +207,9 @@ python main.py admin export --date 2025-12-29 --file attendance_report.csv
 
 ---
 
-## Data stored in MongoDB
+## Data stored in Supabase Postgres
 
-### `users` collection
+### `users` table
 
 Key fields (typical):
 
@@ -226,7 +220,7 @@ Key fields (typical):
 - `voice_backup_paths`: list of 3 backup wav paths in `voice_backups/`
 - `backup_user_id`: the readable folder id used under `voice_backups/`
 
-### `sessions` collection
+### `sessions` table
 
 - `user_id`, `name`, `email`
 - `login_time`, `logout_time`
@@ -238,10 +232,11 @@ Key fields (typical):
 
 ## Troubleshooting
 
-### 1) MongoDB connection failed
+### 1) Database connection failed
 
-- Check MongoDB is running
-- Verify `.env` → `MONGODB_URI`
+- Verify `.env` → `DATABASE_URL`
+- Ensure `?sslmode=require` is present for Supabase
+- Ensure your network allows outbound 5432
 
 ### 2) Webcam not opening
 

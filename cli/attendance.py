@@ -11,7 +11,8 @@ from utils.camera import capture_face_image
 from services.embedding import get_face_embedding
 from services.comparison import verify_match
 from services.voice_embedding import verify_voice_live  # ← NEW
-from db.attendance_repo import log_attendance
+# NOTE: Attendance logging repo not implemented in this version.
+# Use `python main.py session` for login/logout based attendance.
 from config.settings import settings
 import numpy as np
 
@@ -76,14 +77,8 @@ def scan():
     # === FINAL DECISION: BOTH REQUIRED ===
     if face_conf >= 0.65 and voice_passed:  # Face threshold slightly lower than before
         _show_success(candidate_user, face_conf, voice_score)
-        log_attendance(
-            user_id=candidate_user["user_id"],
-            name=candidate_user["name"],
-            email=candidate_user["email"],
-            confidence=face_conf,
-            voice_confidence=voice_score,
-            method="both"
-        )
+        # Attendance logging not wired here; session-based attendance is handled by `mark_session()`.
+        console.print("[dim]Attendance logged via session workflow only in this version.[/dim]")
     else:
         _show_access_denied(f"Face: {face_conf:.1%}, Voice: {voice_score:.1%}")
 

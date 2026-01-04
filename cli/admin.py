@@ -68,7 +68,7 @@ def today():
     absent = 0
 
     for user in all_users:
-        user_id = str(user["_id"])
+        user_id = str(user["id"])
         name = user["name"]
         email = user["email"]
 

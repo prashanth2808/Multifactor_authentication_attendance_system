@@ -12,8 +12,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from utils.camera import capture_face_burst
 from services.embedding import get_face_embedding
 from services.voice_embedding import record_and_embed_three_times  # ← Updated path
-from db.user_repo import save_user
-from db.client import get_db
+from db.user_repo import save_user, find_user_by_email
 
 console = Console()
 
@@ -26,18 +25,12 @@ def register(
     email: str = typer.Option(..., "--email", "-e", help="Email address")
 ):
     """
-    Capture 3 face photos + 3 voice clips, save .wav file, generate embeddings, save to MongoDB
+    Capture 3 face photos + 3 voice clips, save .wav file, generate embeddings, save to Supabase Postgres
     """
     console.print(f"[bold blue]Starting registration for:[/bold blue] {name} ({email})")
     
-    # Get database
-    db = get_db()
-    if db is None:
-        console.print("[bold red]Failed to connect to database[/bold red]")
-        raise typer.Exit(code=1)
-
     # Check if user already exists
-    existing = db.users.find_one({"email": email})
+    existing = find_user_by_email(email)
     if existing:
         console.print(f"[bold red]User with email {email} already registered[/bold red]")
         raise typer.Exit(code=1)
@@ -109,13 +102,12 @@ def register(
         console.print(f"[bold red]Voice enrollment failed: {e}[/bold red]")
         raise typer.Exit(code=1)
 
-    # === SAVE TO MONGODB ===
+    # === SAVE TO DATABASE (Supabase Postgres) ===
     user_data = {
         "name": name,
         "email": email,
         "face_embeddings": face_embeddings,
         "voice_embedding": voice_embedding_list,
-        "voice_audio_path": voice_path,        # Legacy: best clip as .wav
         "voice_backup_paths": audio_backup_paths,  # NEW: all 3 clips for future model changes
         "backup_user_id": backup_folder_id,   # NEW: backup folder identifier (readable + unique)
         "photo_count": 3,
@@ -123,10 +115,10 @@ def register(
         "registered_at": datetime.utcnow()
     }
 
-    result = save_user(user_data)
-    if result and result.inserted_id:
+    inserted = save_user(user_data)
+    if inserted and inserted.get("id"):
         console.print(f"\n[bold green]REGISTRATION SUCCESSFUL![/bold green]")
-        console.print(f"User ID: [bold cyan]{result.inserted_id}[/bold cyan]")
+        console.print(f"User ID: [bold cyan]{inserted['id']}[/bold cyan]")
         console.print(f"Face embeddings: [bold magenta]3 x 512[/bold magenta]")
         console.print(f"Voice embedding: [bold magenta]1 x 192[/bold magenta]")
         console.print(f"Voice backup saved: [bold yellow]{voice_path}[/bold yellow]")

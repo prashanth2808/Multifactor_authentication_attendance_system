@@ -2,22 +2,25 @@
 """
 Central configuration loader using pydantic-settings
 """
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from pathlib import Path
 import os
 
+from dotenv import load_dotenv
+load_dotenv()
+
+import os
 # Load .env from project root
 ENV_PATH = Path(__file__).parent.parent / ".env"
 
 class Settings(BaseSettings):
     """Application settings with validation"""
     
-    # MongoDB
-    mongodb_uri: str = Field(..., env="MONGODB_URI")
-    db_name: str = Field("face_attendance", env="DB_NAME")
-    
+    # Supabase
+    supabase_url: str = Field(..., env="SUPABASE_URL")
+    supabase_anon_key: str = Field(..., env="SUPABASE_ANON_KEY")
+
     # Recognition
     similarity_threshold: float = Field(0.62, env="SIMILARITY_THRESHOLD")
     min_photos: int = Field(3, env="MIN_PHOTOS")
@@ -45,13 +48,4 @@ class Settings(BaseSettings):
 # Global settings instance
 settings = Settings()
 
-# Validate on import
-try:
-    from rich.console import Console
-    console = Console()
-    console.print("[green]Settings loaded successfully[/green]")
-except Exception as e:
-    from rich.console import Console
-    console = Console()
-    console.print(f"[bold red]Settings validation failed: {e}[/bold red]")
-    raise
+# Note: settings are validated on instantiation above.

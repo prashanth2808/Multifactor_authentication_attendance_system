@@ -58,21 +58,14 @@ def report(
     table.add_column("Status", style="bold")
 
     for s in sessions:
-        login_time = s["login_time"].strftime("%I:%M %p") if s.get("login_time") else "—"
-        logout_time = s["logout_time"].strftime("%I:%M %p") if s.get("logout_time") else "—"
-        duration = s.get("duration", "—")
-        if duration != "—":
-            duration = f"{duration} min"
-
-        status = "Logged Out" if s.get("logout_time") else "Active"
-
+        # db.session_repo.get_report returns formatted strings
         table.add_row(
-            s["name"],
-            s["email"],
-            login_time,
-            logout_time,
-            duration,
-            status
+            s.get("name", ""),
+            s.get("email", ""),
+            s.get("login", "—"),
+            s.get("logout", "—"),
+            s.get("duration", "—"),
+            s.get("status", "—"),
         )
 
     console.print(table)
